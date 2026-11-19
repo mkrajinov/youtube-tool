@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         #if DEBUG
         Snapshot.runWindowSnapshotIfRequested()
+        Snapshot.runWindowsSnapshotIfRequested()
         #endif
     }
 

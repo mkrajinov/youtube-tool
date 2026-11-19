@@ -53,6 +53,56 @@ enum Snapshot {
         return PlaylistSheet(request: request, preview: info, downloaded: [entries[1].id])
     }
 
+    /// `YouTubeTool --snapshot-windows <dir>`: real windows (main with sample jobs, playlist picker),
+    /// light and dark, placed off screen. Call after the app finished launching.
+    static func runWindowsSnapshotIfRequested() {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--snapshot-windows"), i + 1 < args.count else { return }
+        let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
+        AppSettings.register()
+        let queue = DownloadQueue()
+        queue.loadSamples()
+        let links = """
+            https://www.youtube.com/watch?v=dQw4w9WgXcQ
+            https://youtu.be/jNQXAC9IVRw
+            https://www.youtube.com/playlist?list=PLZHQObOWTQDPD3MizzM2xVFitgF8hE_ab
+            """
+        var windows: [(NSWindow, String)] = []
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let main = window(ContentView(initialText: links).environment(queue), size: NSSize(width: 860, height: 820))
+            main.appearance = NSAppearance(named: appearance)
+            WindowChrome.apply(to: main)
+            windows.append((main, "window-main-\(name).png"))
+            let sheet = window(playlistPreview.environment(queue), size: NSSize(width: 700, height: 620))
+            sheet.appearance = NSAppearance(named: appearance)
+            windows.append((sheet, "window-playlist-\(name).png"))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            for (window, file) in windows {
+                guard let frameView = window.contentView?.superview,
+                      let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { continue }
+                frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                let url = dir.appendingPathComponent(file)
+                try? rep.representation(using: .png, properties: [:])?.write(to: url)
+                print("wrote \(url.path)")
+            }
+            exit(0)
+        }
+    }
+
+    private static func window(_ view: some View, size: NSSize) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -4000, y: 200), size: size),
+                              styleMask: [.titled, .closable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = Theme.windowBackgroundNS
+        window.contentView = NSHostingView(rootView: view)
+        window.setFrame(NSRect(origin: NSPoint(x: -4000, y: 200), size: size), display: true)
+        window.orderFront(nil)
+        return window
+    }
+
     /// `YouTubeTool --snapshot-window <file.png>`: renders a real window, title bar and traffic lights
     /// included, placed off screen, then exits. Call after the app finished launching.
     static func runWindowSnapshotIfRequested() {

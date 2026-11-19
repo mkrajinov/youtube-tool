@@ -13,7 +13,11 @@ struct ContentView: View {
     @AppStorage(SettingsKey.wantTranscript) private var wantTranscript = false
     @AppStorage(SettingsKey.wantSummary) private var wantSummary = false
 
-    @State private var urlText = ""
+    @State private var urlText: String
+
+    init(initialText: String = "") {
+        _urlText = State(initialValue: initialText)
+    }
     @State private var inputError: String?
     /// The last link was a video opened from a playlist.
     @State private var playlistOffer: String?
