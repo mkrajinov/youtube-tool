@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+YouTubeTool.app/
+vendor/
+.DS_Store
