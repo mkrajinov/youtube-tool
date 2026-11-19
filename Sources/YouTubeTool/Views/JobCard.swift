@@ -22,6 +22,7 @@ struct JobCard: View {
                         .padding(.top, 2)
                 }
                 statusLine
+                if job.textState != .none { textStatusLine }
             }
             Spacer(minLength: 8)
             actions
@@ -83,6 +84,7 @@ struct JobCard: View {
             case .fetchingInfo, .queued, .downloading, .processing:
                 IconButton(icon: "CloseCircle", help: "Cancel", tint: Theme.failure) { queue.cancel(job) }
             case .finished:
+                textButtons
                 IconButton(icon: "PlayCircle", help: "Play") { queue.play(job) }
                 IconButton(icon: "Folder2", help: "Show in Finder") { queue.reveal(job) }
                 IconButton(icon: "Trash", help: "Remove from list") { queue.remove(job) }
@@ -90,6 +92,63 @@ struct JobCard: View {
                 IconButton(icon: "Refresh", help: "Retry") { queue.retry(job) }
                 IconButton(icon: "Trash", help: "Remove from list") { queue.remove(job) }
             }
+        }
+    }
+
+    // MARK: Transcript and summary
+
+    private var textStatusLine: some View {
+        HStack(spacing: 8) {
+            AccentPill(color: textColor)
+            if job.textState.isActive {
+                ProgressView().controlSize(.mini)
+            }
+            Text(textStatusText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(textColor == Theme.failure ? Theme.failure : .secondary)
+                .lineLimit(2)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var textColor: Color {
+        switch job.textState {
+        case .none, .waiting: Theme.neutral
+        case .fetchingCaptions, .preparingAudio, .transcribing, .summarizing: Theme.active
+        case .done: Theme.success
+        case .failed: Theme.failure
+        }
+    }
+
+    private var textStatusText: String {
+        switch job.textState {
+        case .none: ""
+        case .waiting: "Transcript waiting for the previous one"
+        case .fetchingCaptions: "Getting captions from YouTube…"
+        case .preparingAudio: "No captions, preparing audio for speech recognition…"
+        case .transcribing(let fraction):
+            "Transcribing on this Mac" + (fraction.map { " · " + $0.formatted(.percent.precision(.fractionLength(0))) } ?? "") + "…"
+        case .summarizing(let step, let total):
+            total > 1 && step < total ? "Summarising part \(step) of \(total - 1)…" : "Writing summary…"
+        case .done:
+            [job.transcriptURL.map { _ in "Transcript" }, job.summaryURL.map { _ in "summary" }]
+                .compactMap { $0 }.joined(separator: " and ") + " saved"
+        case .failed(let message): message
+        }
+    }
+
+    /// Open the transcript/summary, or make them for a finished download.
+    @ViewBuilder
+    private var textButtons: some View {
+        if job.transcriptURL != nil {
+            IconButton(icon: "DocumentText", help: "Open transcript") { queue.openTranscript(job) }
+        } else if !job.textState.isActive {
+            IconButton(icon: "DocumentText", help: "Make a transcript") { queue.requestText(for: job, summary: false) }
+        }
+        if job.summaryURL != nil {
+            IconButton(icon: "MagicStar", help: "Open summary") { queue.openSummary(job) }
+        } else if !job.textState.isActive, OnDeviceText.summaryStatus == .available {
+            IconButton(icon: "MagicStar", help: "Summarise with Apple Intelligence") { queue.requestText(for: job, summary: true) }
         }
     }
 

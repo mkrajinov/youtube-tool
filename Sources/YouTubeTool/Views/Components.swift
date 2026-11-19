@@ -324,3 +324,36 @@ struct HiddenTitleBar: NSViewRepresentable {
     }
 }
 
+
+/// A pill that toggles on and off independently (accent gradient when on).
+struct TogglePill: View {
+    let title: String
+    let icon: String
+    @Binding var isOn: Bool
+    var isEnabled = true
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Icon(name: icon, size: 15)
+                Text(title).font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(isOn ? Color.white : Color.primary)
+            .background {
+                if isOn {
+                    Capsule().fill(Theme.accent)
+                } else {
+                    Capsule().fill(Theme.chipBackground)
+                }
+            }
+            .contentShape(Capsule())
+            .opacity(isEnabled ? 1 : 0.4)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}

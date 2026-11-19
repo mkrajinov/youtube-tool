@@ -47,6 +47,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Transcribes downloaded videos that have no captions, on this Mac.</string>
   <key>NSHumanReadableCopyright</key><string>Bundles yt-dlp, FFmpeg and Deno; see THIRD_PARTY_NOTICES.md</string>
 </dict>
 </plist>

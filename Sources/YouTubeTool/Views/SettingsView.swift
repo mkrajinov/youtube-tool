@@ -52,6 +52,31 @@ struct SettingsView: View {
             }
 
             Card {
+                SectionPill(text: "Transcripts & summaries")
+                SettingRow(icon: "DocumentText", title: "Captions",
+                           hint: "From YouTube, in the video's language, when it has any", tint: Theme.success) {
+                    EmptyView()
+                }
+                SettingRow(icon: "Microphone2", title: "Speech recognition",
+                           hint: OnDeviceText.speechAvailable
+                               ? "On this Mac, for videos without captions"
+                               : "Needs macOS 26; videos without captions get no transcript",
+                           tint: OnDeviceText.speechAvailable ? Theme.success : Theme.neutral) {
+                    EmptyView()
+                }
+                let summary = OnDeviceText.summaryStatus
+                SettingRow(icon: "MagicStar", title: "Summaries", hint: summary.message,
+                           tint: summary == .available ? Theme.success : Theme.neutral) {
+                    if summary == .appleIntelligenceOff {
+                        Button("Open Settings") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")!)
+                        }
+                        .buttonStyle(ChipButtonStyle())
+                    }
+                }
+            }
+
+            Card {
                 SectionPill(text: "Tools")
                 ytdlpRow
                 toolRow(name: "ffmpeg + ffprobe", icon: "Video", found: queue.tools.ffmpeg,

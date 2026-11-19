@@ -140,7 +140,8 @@ final class DownloadQueue {
 
     /// Accepts one or more URLs separated by whitespace. Returns how many were added.
     @discardableResult
-    func enqueue(_ text: String, mode: DownloadMode, audioFormat: AudioFormat) -> Int {
+    func enqueue(_ text: String, mode: DownloadMode, audioFormat: AudioFormat,
+                 textRequest: DownloadJob.TextRequest = DownloadJob.TextRequest()) -> Int {
         let urls = text
             .split(whereSeparator: { $0.isWhitespace })
             .map(String.init)
@@ -153,7 +154,7 @@ final class DownloadQueue {
                 embedMetadata: AppSettings.embedMetadata,
                 ffmpegLocation: tools.ffmpeg?.url.deletingLastPathComponent()  // dir, so ffprobe resolves too
             )
-            let job = DownloadJob(url: url, options: options)
+            let job = DownloadJob(url: url, options: options, text: textRequest)
             jobs.insert(job, at: 0)
             fetchInfo(for: job)
         }
@@ -175,11 +176,12 @@ final class DownloadQueue {
 
     func cancelAll() {
         jobs.filter(\.state.isActive).forEach(cancel)
+        jobs.forEach { $0.textTask?.cancel() }
     }
 
     func retry(_ job: DownloadJob) {
         guard !job.state.isActive else { return }
-        let fresh = DownloadJob(url: job.url, options: job.options)
+        let fresh = DownloadJob(url: job.url, options: job.options, text: job.text)
         fresh.metadata = job.metadata
         if let index = jobs.firstIndex(where: { $0.id == job.id }) {
             jobs[index] = fresh
@@ -194,11 +196,13 @@ final class DownloadQueue {
 
     func remove(_ job: DownloadJob) {
         cancel(job)
+        job.textTask?.cancel()
+        textQueue.removeAll { $0.id == job.id }
         jobs.removeAll { $0.id == job.id }
     }
 
     func clearFinished() {
-        jobs.removeAll { !$0.state.isActive }
+        jobs.filter { !$0.state.isActive && !$0.textState.isActive }.forEach(remove)
     }
 
     // MARK: Pipeline
@@ -249,6 +253,7 @@ final class DownloadQueue {
                     job.apply(event)
                 }
                 job.state = .finished
+                if !job.text.isEmpty { self.enqueueText(job) }
             } catch YTDLPError.cancelled {
                 job.state = .cancelled
                 Self.removePartialFiles(for: job)
@@ -278,6 +283,125 @@ final class DownloadQueue {
                 try? fm.removeItem(at: dir.appendingPathComponent(name))
             }
         }
+    }
+
+    // MARK: Transcripts and summaries
+
+    /// Jobs waiting for a transcript or summary. One runs at a time: speech recognition and the
+    /// language model use the whole Neural Engine.
+    private var textQueue: [DownloadJob] = []
+    private var textRunning = false
+
+    /// From the job card buttons: add a transcript (and a summary) to a finished download.
+    func requestText(for job: DownloadJob, summary: Bool) {
+        guard job.state == .finished, !job.textState.isActive else { return }
+        job.text.transcript = true
+        if summary { job.text.summary = true }
+        enqueueText(job)
+    }
+
+    private func enqueueText(_ job: DownloadJob) {
+        job.textState = .waiting
+        textQueue.append(job)
+        pumpText()
+    }
+
+    private func pumpText() {
+        guard !textRunning, !textQueue.isEmpty else { return }
+        let job = textQueue.removeFirst()
+        textRunning = true
+        job.textTask = Task {
+            do {
+                try await self.makeText(for: job)
+                job.textState = .done
+            } catch is CancellationError {
+                job.textState = .none
+            } catch {
+                job.textState = .failed(error.localizedDescription)
+            }
+            job.textTask = nil
+            self.textRunning = false
+            self.pumpText()
+        }
+    }
+
+    private func makeText(for job: DownloadJob) async throws {
+        guard let media = job.outputURL else { throw YTDLPError.failed("The downloaded file is missing") }
+        let title = job.metadata?.title ?? media.deletingPathExtension().lastPathComponent
+
+        if job.transcriptPlain == nil || job.transcriptURL == nil {
+            let (lines, source) = try await transcriptLines(for: job, media: media)
+            guard !lines.isEmpty else { throw YTDLPError.failed("The transcript is empty") }
+            let document = TranscriptFormatter.document(
+                title: title, url: job.metadata?.webpageURL ?? job.url, source: source,
+                paragraphs: TranscriptFormatter.paragraphs(lines))
+            let url = TextOutputs.transcriptURL(for: media)
+            try document.write(to: url, atomically: true, encoding: .utf8)
+            job.transcriptURL = url
+            job.transcriptPlain = TranscriptFormatter.paragraphs(lines, timestamps: false).joined(separator: "\n")
+        }
+
+        guard job.text.summary, let plain = job.transcriptPlain else { return }
+        try Task.checkCancellation()
+        guard #available(macOS 26, *) else {
+            throw TextPipelineError.summaryUnavailable(OnDeviceText.SummaryStatus.needsNewerMacOS.message)
+        }
+        job.textState = .summarizing(step: 0, total: 1)
+        let summary = try await Summarizer.summarize(title: title, transcript: plain) { step, total in
+            Task { @MainActor in
+                if job.textState.isActive { job.textState = .summarizing(step: step, total: total) }
+            }
+        }
+        let url = TextOutputs.summaryURL(for: media)
+        let markdown = "# \(title)\n\n\(job.metadata?.webpageURL ?? job.url)\n\n\(summary)\n\n"
+            + "_Summarised on this Mac by Apple Intelligence from the transcript._\n"
+        try markdown.write(to: url, atomically: true, encoding: .utf8)
+        job.summaryURL = url
+    }
+
+    /// YouTube captions when the video has them, otherwise on-device speech recognition.
+    private func transcriptLines(for job: DownloadJob, media: URL) async throws -> ([TranscriptLine], String) {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YouTubeTool-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        if let metadata = job.metadata, let track = CaptionPicker.pick(for: metadata), let ytdlp = tools.ytdlp {
+            job.textState = .fetchingCaptions
+            do {
+                let vtt = try await client(ytdlp).fetchCaptions(url: job.url, track: track, into: temp)
+                let lines = WebVTT.lines(from: try String(contentsOf: vtt, encoding: .utf8))
+                if !lines.isEmpty { return (lines, track.label) }
+            } catch {
+                NSLog("YouTubeTool: captions failed, falling back to speech recognition: \(error)")
+            }
+        }
+        try Task.checkCancellation()
+
+        guard #available(macOS 26, *), OnDeviceText.speechAvailable, let ffmpeg = tools.ffmpeg else {
+            throw TextPipelineError.noCaptionsAndNoSpeech
+        }
+        job.textState = .preparingAudio
+        let wav = temp.appendingPathComponent("audio.wav")
+        try await AudioConverter.wav(from: media, ffmpeg: ffmpeg.url, to: wav)
+        job.textState = .transcribing(nil)
+        let (lines, locale) = try await SpeechTranscription.transcribe(
+            wav: wav, languageHint: job.metadata?.language, duration: job.metadata?.duration
+        ) { fraction in
+            Task { @MainActor in
+                if job.textState.isActive { job.textState = .transcribing(fraction) }
+            }
+        }
+        let language = Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+        return (lines, "Apple speech recognition on this Mac (\(language))")
+    }
+
+    func openTranscript(_ job: DownloadJob) {
+        if let url = job.transcriptURL { NSWorkspace.shared.open(url) }
+    }
+
+    func openSummary(_ job: DownloadJob) {
+        if let url = job.summaryURL { NSWorkspace.shared.open(url) }
     }
 
     #if DEBUG

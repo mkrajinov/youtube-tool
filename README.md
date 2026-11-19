@@ -3,6 +3,14 @@
 A native macOS app that downloads YouTube videos as mp4, or audio only as m4a, mp3, opus
 or wav. yt-dlp, FFmpeg and Deno are built in, so nothing else needs installing.
 
+It can also save a **transcript** and a **summary** next to each download:
+
+- Transcripts come from the video's YouTube captions (uploaded or automatic, in the spoken
+  language). Videos without captions are transcribed on your Mac with Apple's speech
+  recognition (macOS 26 or later).
+- Summaries are written on your Mac by Apple Intelligence (macOS 26 or later, Apple
+  Intelligence turned on). Nothing is sent to an online service.
+
 Requires macOS 15 or later on Apple Silicon.
 
 ## Install with Homebrew

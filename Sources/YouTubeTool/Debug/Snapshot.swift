@@ -83,10 +83,18 @@ extension DownloadQueue {
             if state == .finished { j.outputURL = dir.appendingPathComponent("\(title) [x].m4a") }
             return j
         }
+        let summarised = job("Kubernetes networking deep dive", .audio, .finished)
+        summarised.textState = .done
+        summarised.transcriptURL = dir.appendingPathComponent("k.transcript.txt")
+        summarised.summaryURL = dir.appendingPathComponent("k.summary.md")
+        let transcribing = job("Interview without captions", .audio, .finished)
+        transcribing.textState = .transcribing(0.37)
         setSampleJobs([
             job("Designing Data-Intensive Applications — talk", .audio, .downloading, fraction: 0.62),
             job("BGP explained in 20 minutes", .video, .processing("Merging video and audio")),
-            job("Kubernetes networking deep dive", .audio, .finished),
+            transcribing,
+            summarised,
+            job("Plain download", .audio, .finished),
             job("Private video", .audio, .failed("[youtube] x: Video unavailable")),
             job("Fetching…", .video, .fetchingInfo),
         ])

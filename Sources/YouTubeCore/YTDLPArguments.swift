@@ -12,6 +12,20 @@ public enum YTDLPArguments {
         ["--dump-single-json", "--no-playlist", "--no-warnings", "--", url]
     }
 
+    /// Downloads one caption track as `<directory>/<id>.<lang>.vtt`, without the video.
+    public static func captions(url: String, track: CaptionTrack, directory: URL) -> [String] {
+        [
+            "--skip-download",
+            track.isAutomatic ? "--write-auto-subs" : "--write-subs",
+            "--sub-langs", track.language,
+            "--sub-format", "vtt",
+            "--no-playlist", "--no-warnings", "--no-progress",
+            "-P", directory.path,
+            "-o", "%(id)s",
+            "--", url,
+        ]
+    }
+
     public static func download(url: String, options: DownloadOptions) -> [String] {
         var args: [String] = [
             "--no-playlist",

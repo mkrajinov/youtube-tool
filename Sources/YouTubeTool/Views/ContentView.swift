@@ -9,10 +9,13 @@ struct ContentView: View {
     @AppStorage(SettingsKey.lastAudioFormat) private var formatRaw = AudioFormat.m4a.rawValue
     @AppStorage(SettingsKey.outputDirectory) private var outputPath = AppSettings.defaultOutputDirectory.path
     @AppStorage(SettingsKey.maxConcurrent) private var maxConcurrent = 2
+    @AppStorage(SettingsKey.wantTranscript) private var wantTranscript = false
+    @AppStorage(SettingsKey.wantSummary) private var wantSummary = false
 
     @State private var urlText = ""
     @State private var inputError: String?
     @State private var isDropTargeted = false
+    @State private var summaryStatus = OnDeviceText.summaryStatus
 
     private var mode: Binding<DownloadMode> {
         Binding(get: { DownloadMode(rawValue: modeRaw) ?? .audio }, set: { modeRaw = $0.rawValue })
@@ -20,6 +23,25 @@ struct ContentView: View {
 
     private var format: Binding<AudioFormat> {
         Binding(get: { AudioFormat(rawValue: formatRaw) ?? .m4a }, set: { formatRaw = $0.rawValue })
+    }
+
+    /// A summary is made from the transcript, so they switch on and off together.
+    private var transcriptToggle: Binding<Bool> {
+        Binding(get: { wantTranscript || wantSummary }, set: {
+            wantTranscript = $0
+            if !$0 { wantSummary = false }
+        })
+    }
+
+    private var summaryToggle: Binding<Bool> {
+        Binding(get: { wantSummary && summaryStatus == .available }, set: {
+            wantSummary = $0
+            if $0 { wantTranscript = true }
+        })
+    }
+
+    private var textRequest: DownloadJob.TextRequest {
+        DownloadJob.TextRequest(transcript: transcriptToggle.wrappedValue, summary: summaryToggle.wrappedValue)
     }
 
     var body: some View {
@@ -30,11 +52,15 @@ struct ContentView: View {
             queueSection
         }
         .padding(20)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            summaryStatus = OnDeviceText.summaryStatus  // e.g. Apple Intelligence just turned on
+        }
         .background(Theme.windowGradient.ignoresSafeArea())
         .background(HiddenTitleBar())
         .dropDestination(for: URL.self) { urls, _ in
             let text = urls.map(\.absoluteString).joined(separator: "\n")
-            return queue.enqueue(text, mode: mode.wrappedValue, audioFormat: format.wrappedValue) > 0
+            return queue.enqueue(text, mode: mode.wrappedValue, audioFormat: format.wrappedValue,
+                                 textRequest: textRequest) > 0
         } isTargeted: { isDropTargeted = $0 }
         .overlay {
             if isDropTargeted {
@@ -144,6 +170,22 @@ struct ContentView: View {
             }
 
             HStack(spacing: 6) {
+                TogglePill(title: "Transcript", icon: "DocumentText", isOn: transcriptToggle)
+                    .help("Save the video's text next to the file: YouTube captions, or speech recognition on this Mac when there are none")
+                TogglePill(title: "Summary", icon: "MagicStar", isOn: summaryToggle,
+                           isEnabled: summaryStatus == .available)
+                    .help(summaryStatus == .available
+                          ? "Summarise the transcript with Apple Intelligence, on this Mac"
+                          : summaryStatus.message)
+                if summaryStatus != .available {
+                    Text(summaryStatus.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
+                }
+            }
+
+            HStack(spacing: 6) {
                 if let inputError {
                     Icon(name: "Warning2", size: 13).foregroundStyle(Theme.failure)
                     Text(inputError).foregroundStyle(Theme.failure)
@@ -159,11 +201,13 @@ struct ContentView: View {
     private var summaryLine: String {
         let what = mode.wrappedValue == .video ? "Video · mp4 (H.264, up to 1080p)" : "Audio · \(formatRaw)"
         let dir = (outputPath as NSString).abbreviatingWithTildeInPath
-        return "\(what) → \(dir) · up to \(maxConcurrent) at a time"
+        let text = summaryToggle.wrappedValue ? " + transcript + summary" : (transcriptToggle.wrappedValue ? " + transcript" : "")
+        return "\(what)\(text) → \(dir) · up to \(maxConcurrent) at a time"
     }
 
     private func submit() {
-        let added = queue.enqueue(urlText, mode: mode.wrappedValue, audioFormat: format.wrappedValue)
+        let added = queue.enqueue(urlText, mode: mode.wrappedValue, audioFormat: format.wrappedValue,
+                                  textRequest: textRequest)
         if added > 0 {
             urlText = ""
             inputError = nil

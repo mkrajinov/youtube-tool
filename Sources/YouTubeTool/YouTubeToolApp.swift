@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         #if DEBUG
         Snapshot.runIfRequested()
+        TextCheck.runIfRequested()
         #endif
         AppSettings.register()
         queue = DownloadQueue()

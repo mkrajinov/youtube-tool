@@ -10,6 +10,8 @@ enum SettingsKey {
     static let embedMetadata = "embedMetadata"
     static let lastMode = "lastMode"
     static let lastAudioFormat = "lastAudioFormat"
+    static let wantTranscript = "wantTranscript"
+    static let wantSummary = "wantSummary"
 }
 
 enum AppSettings {
@@ -27,6 +29,8 @@ enum AppSettings {
             SettingsKey.embedMetadata: true,
             SettingsKey.lastMode: DownloadMode.audio.rawValue,
             SettingsKey.lastAudioFormat: AudioFormat.m4a.rawValue,
+            SettingsKey.wantTranscript: false,
+            SettingsKey.wantSummary: false,
         ])
     }
 

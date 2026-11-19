@@ -66,14 +66,41 @@ public struct VideoMetadata: Sendable, Decodable, Equatable {
     public let duration: Double?
     public let thumbnail: String?
     public let webpageURL: String?
+    /// Spoken language as YouTube reports it, e.g. "en" (often missing).
+    public let language: String?
+    /// Languages with uploaded captions, e.g. ["en", "de-DE"].
+    public let subtitleLanguages: [String]
+    /// Languages with automatic captions; "<lang>-orig" marks the spoken language.
+    public let automaticCaptionLanguages: [String]
 
     enum CodingKeys: String, CodingKey {
-        case id, title, channel, uploader, duration, thumbnail
+        case id, title, channel, uploader, duration, thumbnail, language, subtitles
         case webpageURL = "webpage_url"
+        case automaticCaptions = "automatic_captions"
+    }
+
+    /// Only the keys of the caption dictionaries matter.
+    private struct Ignored: Decodable {}
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        channel = try c.decodeIfPresent(String.self, forKey: .channel)
+        uploader = try c.decodeIfPresent(String.self, forKey: .uploader)
+        duration = try c.decodeIfPresent(Double.self, forKey: .duration)
+        thumbnail = try c.decodeIfPresent(String.self, forKey: .thumbnail)
+        webpageURL = try c.decodeIfPresent(String.self, forKey: .webpageURL)
+        language = try? c.decodeIfPresent(String.self, forKey: .language)
+        let subs = (try? c.decodeIfPresent([String: [Ignored]].self, forKey: .subtitles)) ?? nil
+        let auto = (try? c.decodeIfPresent([String: [Ignored]].self, forKey: .automaticCaptions)) ?? nil
+        subtitleLanguages = (subs?.keys).map { Array($0).sorted() } ?? []
+        automaticCaptionLanguages = (auto?.keys).map { Array($0).sorted() } ?? []
     }
 
     public init(id: String, title: String, channel: String? = nil, uploader: String? = nil,
-                duration: Double? = nil, thumbnail: String? = nil, webpageURL: String? = nil) {
+                duration: Double? = nil, thumbnail: String? = nil, webpageURL: String? = nil,
+                language: String? = nil, subtitleLanguages: [String] = [], automaticCaptionLanguages: [String] = []) {
         self.id = id
         self.title = title
         self.channel = channel
@@ -81,6 +108,9 @@ public struct VideoMetadata: Sendable, Decodable, Equatable {
         self.duration = duration
         self.thumbnail = thumbnail
         self.webpageURL = webpageURL
+        self.language = language
+        self.subtitleLanguages = subtitleLanguages
+        self.automaticCaptionLanguages = automaticCaptionLanguages
     }
 
     public var author: String? { channel ?? uploader }

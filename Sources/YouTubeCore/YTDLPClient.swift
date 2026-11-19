@@ -227,6 +227,25 @@ public struct YTDLPClient: Sendable {
         return DownloadHandle(events: stream, cancel: { handle.cancel() })
     }
 
+    // MARK: Captions
+
+    /// Downloads a caption track into `directory` and returns the VTT file.
+    public func fetchCaptions(url: String, track: CaptionTrack, into directory: URL) async throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard let result = await runSimple(YTDLPArguments.captions(url: url, track: track, directory: directory), common: true) else {
+            throw YTDLPError.failed("Could not start yt-dlp")
+        }
+        guard result.status == 0 else {
+            throw YTDLPError.failed(ProgressParser.errorMessage(fromStderr: result.stderr)
+                ?? "yt-dlp exited with code \(result.status)")
+        }
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        guard let vtt = files.first(where: { $0.pathExtension == "vtt" }) else {
+            throw YTDLPError.failed("YouTube returned no captions for \(track.language)")
+        }
+        return vtt
+    }
+
     // MARK: Version
 
     public func version() async -> String? {
@@ -263,8 +282,9 @@ public struct YTDLPClient: Sendable {
         let stderr: String
     }
 
-    private func runSimple(_ arguments: [String]) async -> SimpleResult? {
-        let (process, out, err) = makeProcess(arguments, common: false)
+    /// Runs yt-dlp to completion. Pass `common: true` for calls that talk to YouTube.
+    private func runSimple(_ arguments: [String], common: Bool = false) async -> SimpleResult? {
+        let (process, out, err) = makeProcess(arguments, common: common)
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 guard (try? process.run()) != nil else {

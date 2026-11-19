@@ -43,6 +43,18 @@ struct LiveDownloadTests {
         #expect((meta.duration ?? 0) > 10)
     }
 
+    @Test func captions() async throws {
+        let meta = try await client.fetchMetadata(url: url)
+        let track = try #require(CaptionPicker.pick(for: meta))
+        #expect(track.baseLanguage == "en")
+        let dir = out.appendingPathComponent("captions-\(UUID().uuidString)")
+        let vtt = try await client.fetchCaptions(url: url, track: track, into: dir)
+        let lines = WebVTT.lines(from: try String(contentsOf: vtt, encoding: .utf8))
+        #expect(lines.count > 10)
+        #expect(lines.contains { $0.text.localizedCaseInsensitiveContains("never gonna give you up") })
+        print("captions \(track.label): \(lines.count) lines, first: \(lines.first?.text ?? "-")")
+    }
+
     @Test(arguments: [
         (DownloadMode.audio, AudioFormat.m4a, "m4a"),
         (.audio, .mp3, "mp3"),

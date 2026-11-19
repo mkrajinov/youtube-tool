@@ -22,10 +22,44 @@ final class DownloadJob: Identifiable {
         }
     }
 
+    /// What to produce after the download: a transcript, and optionally a summary of it.
+    struct TextRequest: Equatable {
+        var transcript = false
+        var summary = false
+
+        var isEmpty: Bool { !transcript && !summary }
+    }
+
+    enum TextState: Equatable {
+        case none
+        case waiting
+        case fetchingCaptions
+        case preparingAudio
+        case transcribing(Double?)
+        case summarizing(step: Int, total: Int)
+        case done
+        case failed(String)
+
+        var isActive: Bool {
+            switch self {
+            case .waiting, .fetchingCaptions, .preparingAudio, .transcribing, .summarizing: true
+            case .none, .done, .failed: false
+            }
+        }
+    }
+
     let id = UUID()
     let url: String
     let options: DownloadOptions
     let createdAt = Date()
+
+    var text: TextRequest
+    var textState: TextState = .none
+    var transcriptURL: URL?
+    var summaryURL: URL?
+    /// Transcript text without timestamps, kept for summarising later.
+    @ObservationIgnored var transcriptPlain: String?
+    @ObservationIgnored var textTask: Task<Void, Never>?
 
     var state: State = .fetchingInfo
     var metadata: VideoMetadata?
@@ -37,9 +71,10 @@ final class DownloadJob: Identifiable {
     @ObservationIgnored var cancelAction: (@Sendable () -> Void)?
     @ObservationIgnored var task: Task<Void, Never>?
 
-    init(url: String, options: DownloadOptions) {
+    init(url: String, options: DownloadOptions, text: TextRequest = TextRequest()) {
         self.url = url
         self.options = options
+        self.text = text
     }
 
     var displayTitle: String { metadata?.title ?? url }
