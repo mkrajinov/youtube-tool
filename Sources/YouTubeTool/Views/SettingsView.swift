@@ -87,6 +87,12 @@ struct SettingsView: View {
                         purpose: "YouTube's JavaScript checks")
                 customPaths
             }
+
+            Text("YouTube Tool · \(AppInfo.longVersion)")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 20)

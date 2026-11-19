@@ -56,3 +56,20 @@ enum AppSettings {
         (url.path as NSString).abbreviatingWithTildeInPath
     }
 }
+
+/// The app's own version, from Info.plist (written by scripts/build-app.sh from VERSION).
+enum AppInfo {
+    /// "0.3.0", or "dev" when run with `swift run` (no bundle Info.plist).
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+
+    static var build: String? {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+    }
+
+    /// "Version 0.3.0 (build 12)"
+    static var longVersion: String {
+        "Version \(version)" + (build.map { " (build \($0))" } ?? "")
+    }
+}

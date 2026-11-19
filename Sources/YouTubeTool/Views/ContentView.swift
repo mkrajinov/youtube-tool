@@ -99,7 +99,16 @@ struct ContentView: View {
                 )
                 .shadow(color: Theme.accentStart.opacity(0.3), radius: 8, y: 3)
             VStack(alignment: .leading, spacing: 3) {
-                Text("YouTube Tool").font(.system(size: 20, weight: .bold))
+                HStack(spacing: 8) {
+                    Text("YouTube Tool").font(.system(size: 20, weight: .bold))
+                    Text(AppInfo.version == "dev" ? "dev" : "v\(AppInfo.version)")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Theme.chipBackground))
+                        .help(AppInfo.longVersion)
+                }
                 Text(toolsSubtitle).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
