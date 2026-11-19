@@ -14,12 +14,11 @@ enum Theme {
     static let failure = Color(red: 0.92, green: 0.26, blue: 0.24)
     static let neutral = Color.secondary
 
-    // Fixed window / card colours. The system ones (windowBackgroundColor, controlBackgroundColor)
-    // differ between macOS versions: on older releases the window is a lighter grey than the
-    // cards, so the app looked different on every Mac. These are the macOS 27 values.
-    static let windowBackgroundNS = dynamicNS(light: (1, 1, 1), dark: (0.118, 0.118, 0.118))
+    // Fixed window / card colours: a lighter grey window with darker cards (the classic macOS
+    // dark palette). The system colours differ between macOS versions, so they're not used.
+    static let windowBackgroundNS = dynamicNS(light: (0.925, 0.925, 0.925), dark: (0.196, 0.196, 0.196))
     static let windowBackground = Color(nsColor: windowBackgroundNS)
-    static let cardBackground = windowBackground
+    static let cardBackground = Color(nsColor: dynamicNS(light: (1, 1, 1), dark: (0.118, 0.118, 0.118)))
     static let cardStroke = Color.primary.opacity(0.07)
     static let chipBackground = Color.primary.opacity(0.07)
     static let radius: CGFloat = 20
