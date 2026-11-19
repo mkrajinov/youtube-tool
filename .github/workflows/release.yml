@@ -62,24 +62,18 @@ jobs:
               --title "YouTube Tool ${GITHUB_REF_NAME#v}" --generate-notes
           fi
 
-      # Same setup as the fritzbox release: HOMEBREW_TAP_SSH_KEY is the private half of a
-      # write deploy key on mkrajinov/homebrew-tap. Skipped when the secret isn't set.
+      # HOMEBREW_TAP_TOKEN: fine-grained personal access token limited to
+      # mkrajinov/homebrew-tap with Contents read/write. Skipped when the secret isn't set.
       - name: Update Homebrew tap
         if: startsWith(github.ref, 'refs/tags/')
         env:
-          HOMEBREW_TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          if [[ -z "$HOMEBREW_TAP_SSH_KEY" ]]; then
-            echo "::warning::HOMEBREW_TAP_SSH_KEY not set; copy youtube-tool.rb from the release to the tap's Casks/ by hand"
+          if [[ -z "$HOMEBREW_TAP_TOKEN" ]]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set; copy youtube-tool.rb from the release to the tap's Casks/ by hand"
             exit 0
           fi
-          key="$RUNNER_TEMP/tap_key"
-          printf '%s\n' "$HOMEBREW_TAP_SSH_KEY" > "$key"
-          chmod 600 "$key"
-          mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes"
-          git clone git@github.com:mkrajinov/homebrew-tap.git tap
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/mkrajinov/homebrew-tap.git" tap
           mkdir -p tap/Casks
           cp dist/youtube-tool.rb tap/Casks/youtube-tool.rb
           cd tap
@@ -92,4 +86,3 @@ jobs:
           fi
           git commit -m "youtube-tool ${GITHUB_REF_NAME}"
           git push
-          rm -f "$key"
