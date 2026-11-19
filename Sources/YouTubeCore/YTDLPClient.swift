@@ -129,7 +129,16 @@ public struct YTDLPClient: Sendable {
     // MARK: Metadata
 
     public func fetchMetadata(url: String) async throws -> VideoMetadata {
-        let (process, out, err) = makeProcess(YTDLPArguments.metadata(url: url))
+        try await fetchJSON(YTDLPArguments.metadata(url: url))
+    }
+
+    /// The videos in a playlist or channel tab.
+    public func fetchPlaylist(url: String) async throws -> PlaylistInfo {
+        try await fetchJSON(YTDLPArguments.playlist(url: url))
+    }
+
+    private func fetchJSON<T: Decodable>(_ arguments: [String]) async throws -> T {
+        let (process, out, err) = makeProcess(arguments)
         let handle = RunningProcess(process: process)
 
         let (status, stdout, stderr): (Int32, Data, Data) = try await withTaskCancellationHandler {
@@ -162,7 +171,7 @@ public struct YTDLPClient: Sendable {
             throw YTDLPError.failed(ProgressParser.errorMessage(fromStderr: text) ?? "yt-dlp exited with code \(status)")
         }
         do {
-            return try JSONDecoder().decode(VideoMetadata.self, from: stdout)
+            return try JSONDecoder().decode(T.self, from: stdout)
         } catch {
             throw YTDLPError.invalidMetadata(error.localizedDescription)
         }

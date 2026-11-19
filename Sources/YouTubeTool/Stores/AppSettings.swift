@@ -12,6 +12,8 @@ enum SettingsKey {
     static let lastAudioFormat = "lastAudioFormat"
     static let wantTranscript = "wantTranscript"
     static let wantSummary = "wantSummary"
+    static let playlistOwnFolder = "playlistOwnFolder"
+    static let playlistNumbered = "playlistNumbered"
 }
 
 enum AppSettings {
@@ -31,6 +33,8 @@ enum AppSettings {
             SettingsKey.lastAudioFormat: AudioFormat.m4a.rawValue,
             SettingsKey.wantTranscript: false,
             SettingsKey.wantSummary: false,
+            SettingsKey.playlistOwnFolder: true,
+            SettingsKey.playlistNumbered: false,
         ])
     }
 

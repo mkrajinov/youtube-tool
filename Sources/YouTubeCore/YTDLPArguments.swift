@@ -8,8 +8,18 @@ public enum YTDLPArguments {
 
     public static let outputTemplate = "%(title)s [%(id)s].%(ext)s"
 
+    /// yt-dlp output template; `%` in the prefix is escaped so it stays literal.
+    public static func outputTemplate(prefix: String) -> String {
+        prefix.replacingOccurrences(of: "%", with: "%%") + outputTemplate
+    }
+
     public static func metadata(url: String) -> [String] {
         ["--dump-single-json", "--no-playlist", "--no-warnings", "--", url]
+    }
+
+    /// Lists a playlist's or channel's videos (titles and durations only, fast).
+    public static func playlist(url: String) -> [String] {
+        ["--flat-playlist", "--dump-single-json", "--yes-playlist", "--no-warnings", "--", url]
     }
 
     /// Downloads one caption track as `<directory>/<id>.<lang>.vtt`, without the video.
@@ -41,7 +51,7 @@ public enum YTDLPArguments {
             "postprocess:\(postprocessTag)%(progress.postprocessor)s",
             "--print", "after_move:\(fileTag)%(filepath)s",
             "-P", options.outputDirectory.path,
-            "-o", outputTemplate,
+            "-o", outputTemplate(prefix: options.filePrefix),
         ]
 
         if let ffmpeg = options.ffmpegLocation {

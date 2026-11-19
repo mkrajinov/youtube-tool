@@ -7,6 +7,8 @@ import YouTubeCore
 ///   YouTubeTool --transcribe <media file> [language]   speech recognition (needs ffmpeg on PATH or bundled)
 ///   YouTubeTool --summarize <text file> [title]        Apple Intelligence summary
 ///   YouTubeTool --pipeline <url> -outputDirectory <dir>  download audio + transcript + summary, headless
+///   YouTubeTool --playlist <url> <count> -outputDirectory <dir>  list a playlist, download the first <count>
+///                                                                 (own folder, numbered, with transcripts)
 @MainActor
 enum TextCheck {
     static func runIfRequested() {
@@ -24,6 +26,11 @@ enum TextCheck {
         if let i = args.firstIndex(of: "--pipeline"), i + 1 < args.count {
             let url = args[i + 1]
             run { try await pipeline(url) }
+        }
+        if let i = args.firstIndex(of: "--playlist"), i + 1 < args.count {
+            let url = args[i + 1]
+            let count = i + 2 < args.count ? Int(args[i + 2]) ?? 2 : 2
+            run { try await playlist(url, count: count) }
         }
         if let i = args.firstIndex(of: "--summarize"), i + 1 < args.count {
             let file = URL(fileURLWithPath: args[i + 1])
@@ -59,7 +66,7 @@ enum TextCheck {
         let queue = DownloadQueue()
         while !queue.tools.isReady { try await Task.sleep(for: .milliseconds(200)) }
         print("tools:", queue.tools.ytdlp?.source.label ?? "-", "output:", AppSettings.outputDirectory.path)
-        queue.enqueue(url, mode: .audio, audioFormat: .m4a,
+        queue.add(url, mode: .audio, audioFormat: .m4a,
                       textRequest: .init(transcript: true, summary: OnDeviceText.summaryStatus == .available))
         let job = try require_(queue.jobs.first)
         var last = ""
@@ -72,6 +79,30 @@ enum TextCheck {
         print("media:", job.outputURL?.path ?? "-")
         print("transcript:", job.transcriptURL?.path ?? "-")
         print("summary:", job.summaryURL?.path ?? "-")
+    }
+
+    private static func playlist(_ url: String, count: Int) async throws {
+        AppSettings.register()
+        let queue = DownloadQueue()
+        while !queue.tools.isReady { try await Task.sleep(for: .milliseconds(200)) }
+        let start = Date()
+        let result = queue.add(url, mode: .audio, audioFormat: .m4a, textRequest: .init(transcript: true))
+        print("add:", result.videos, "videos,", result.playlists, "playlists, offer:", result.playlistOffer ?? "-")
+        let request = try require_(queue.playlistRequests.first)
+        let info = try await queue.fetchPlaylist(request.url)
+        print("listed \(info.title) by \(info.channel ?? "-"): \(info.entries.count) videos in \(Int(-start.timeIntervalSinceNow)) s")
+        info.entries.prefix(5).forEach { print(" ", $0.index, $0.title, Format.duration($0.duration) ?? "-", $0.isUnavailable ? "UNAVAILABLE" : "") }
+        let picked = Array(info.entries.filter { !$0.isUnavailable }.prefix(count))
+        queue.enqueue(picked, from: info, request: request, ownFolder: true, numbered: true)
+        queue.dismissPlaylist(request)
+        while queue.jobs.contains(where: { $0.state.isActive || $0.textState.isActive }) {
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        for job in queue.jobs.reversed() {
+            print(job.hint, "|", job.state, job.textState)
+            print("  ", job.outputURL?.path ?? "-")
+            print("  ", job.transcriptURL?.lastPathComponent ?? "-")
+        }
     }
 
     private static func require_<T>(_ value: T?) throws -> T {

@@ -67,6 +67,10 @@ final class DownloadJob: Identifiable {
     /// yt-dlp downloads video and audio as separate streams in video mode; count them for the UI.
     var streamIndex = 1
     var outputURL: URL?
+    /// "Playlist title #7" for videos added from a playlist.
+    var playlistLabel: String?
+    /// Metadata came from a playlist listing: no caption info yet.
+    @ObservationIgnored var metadataIsPartial = false
 
     @ObservationIgnored var cancelAction: (@Sendable () -> Void)?
     @ObservationIgnored var task: Task<Void, Never>?
@@ -79,9 +83,9 @@ final class DownloadJob: Identifiable {
 
     var displayTitle: String { metadata?.title ?? url }
 
-    /// "Channel · 12:34 · Audio · m4a"
+    /// "Playlist #3 · Channel · 12:34 · Audio · m4a"
     var hint: String {
-        [metadata?.author, Format.duration(metadata?.duration), options.summary]
+        [playlistLabel, metadata?.author, Format.duration(metadata?.duration), options.summary]
             .compactMap { $0 }
             .joined(separator: " · ")
     }

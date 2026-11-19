@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import YouTubeCore
 
 struct ContentView: View {
@@ -14,6 +15,8 @@ struct ContentView: View {
 
     @State private var urlText = ""
     @State private var inputError: String?
+    /// The last link was a video opened from a playlist.
+    @State private var playlistOffer: String?
     @State private var isDropTargeted = false
     @State private var summaryStatus = OnDeviceText.summaryStatus
 
@@ -58,10 +61,15 @@ struct ContentView: View {
         .background(Theme.windowGradient.ignoresSafeArea())
         .background(HiddenTitleBar())
         .dropDestination(for: URL.self) { urls, _ in
-            let text = urls.map(\.absoluteString).joined(separator: "\n")
-            return queue.enqueue(text, mode: mode.wrappedValue, audioFormat: format.wrappedValue,
-                                 textRequest: textRequest) > 0
+            // Links, or text files with a list of links.
+            let text = urls.map { url in
+                url.isFileURL ? Self.readText(url) ?? "" : url.absoluteString
+            }.joined(separator: "\n")
+            return add(text)
         } isTargeted: { isDropTargeted = $0 }
+        .sheet(item: Binding(get: { queue.playlistRequests.first }, set: { _ in })) { request in
+            PlaylistSheet(request: request)
+        }
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -129,9 +137,11 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 IconChip(name: "Link2", tint: Theme.accentStart)
-                TextField("Paste a YouTube link (several separated by spaces or new lines)", text: $urlText)
+                TextField("Paste YouTube links: videos, playlists or channels, one per line",
+                          text: $urlText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
+                    .lineLimit(1...6)
                     .onSubmit(submit)
                 Button {
                     if let s = NSPasteboard.general.string(forType: .string) { urlText = s }
@@ -142,6 +152,14 @@ struct ContentView: View {
                     }
                 }
                 .buttonStyle(ChipButtonStyle())
+                Button(action: openList) {
+                    HStack(spacing: 5) {
+                        Icon(name: "TaskSquare", size: 14)
+                        Text("Open list…")
+                    }
+                }
+                .buttonStyle(ChipButtonStyle())
+                .help("Download every YouTube link in a text file")
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.chipBackground))
@@ -161,7 +179,7 @@ struct ContentView: View {
                 Button(action: submit) {
                     HStack(spacing: 6) {
                         Icon(name: "DocumentDownload", size: 15)
-                        Text("Download")
+                        Text(linkCount > 1 ? "Download \(linkCount)" : "Download")
                     }
                 }
                 .buttonStyle(GradientButtonStyle())
@@ -189,6 +207,17 @@ struct ContentView: View {
                 if let inputError {
                     Icon(name: "Warning2", size: 13).foregroundStyle(Theme.failure)
                     Text(inputError).foregroundStyle(Theme.failure)
+                } else if let playlistOffer {
+                    Icon(name: "MusicPlaylist", size: 13).foregroundStyle(.secondary)
+                    Text("That video is part of a playlist.").foregroundStyle(.secondary)
+                    Button("Choose from the playlist…") {
+                        queue.openPlaylist(playlistOffer, mode: mode.wrappedValue, audioFormat: format.wrappedValue,
+                                           textRequest: textRequest)
+                        self.playlistOffer = nil
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                    Button("Dismiss") { self.playlistOffer = nil }
+                        .buttonStyle(ChipButtonStyle())
                 } else {
                     Icon(name: "Folder2", size: 13).foregroundStyle(.secondary)
                     Text(summaryLine).foregroundStyle(.secondary)
@@ -205,15 +234,36 @@ struct ContentView: View {
         return "\(what)\(text) → \(dir) · up to \(maxConcurrent) at a time"
     }
 
+    /// Links in the field; counted live for the Download button.
+    private var linkCount: Int { LinkExtractor.links(in: urlText).count }
+
     private func submit() {
-        let added = queue.enqueue(urlText, mode: mode.wrappedValue, audioFormat: format.wrappedValue,
-                                  textRequest: textRequest)
-        if added > 0 {
-            urlText = ""
-            inputError = nil
-        } else {
-            inputError = "That doesn't look like a YouTube link."
-        }
+        if add(urlText) { urlText = "" }
+    }
+
+    /// Queues the videos in `text` and opens the picker for playlists. False when nothing was found.
+    @discardableResult
+    private func add(_ text: String) -> Bool {
+        let result = queue.add(text, mode: mode.wrappedValue, audioFormat: format.wrappedValue,
+                               textRequest: textRequest)
+        playlistOffer = result.playlistOffer
+        inputError = result.isEmpty ? "No YouTube links found." : nil
+        return !result.isEmpty
+    }
+
+    private func openList() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.plainText, .text, .commaSeparatedText, .html,
+                                     UTType(filenameExtension: "md") ?? .plainText]
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose text files with YouTube links"
+        guard panel.runModal() == .OK else { return }
+        add(panel.urls.compactMap(Self.readText).joined(separator: "\n"))
+    }
+
+    private static func readText(_ url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url), data.count < 10_000_000 else { return nil }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
     }
 
     // MARK: Queue
@@ -228,6 +278,12 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if queue.activeCount > 1 {
+                    Button { queue.cancelAll() } label: {
+                        HStack(spacing: 5) { Icon(name: "StopCircle", size: 14); Text("Stop all") }
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                }
                 if queue.finishedCount > 0 {
                     Button { queue.clearFinished() } label: {
                         HStack(spacing: 5) { Icon(name: "Broom", size: 14); Text("Clear finished") }
@@ -258,7 +314,7 @@ struct ContentView: View {
         VStack(spacing: 10) {
             Icon(name: "DocumentDownload", size: 36).foregroundStyle(.tertiary)
             Text("No downloads yet").font(.system(size: 13, weight: .semibold))
-            Text("Paste a link above, or drop one onto this window.")
+            Text("Paste links above, or drop links or a text file with links onto this window.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }

@@ -3,6 +3,17 @@
 A native macOS app that downloads YouTube videos as mp4, or audio only as m4a, mp3, opus
 or wav. yt-dlp, FFmpeg and Deno are built in, so nothing else needs installing.
 
+Several at once:
+
+- Paste or drop any number of links (one per line), or open a text file with links
+  (**Open list…**). Every YouTube link in the text is picked up, and they download 2 at a time
+  (up to 4, in Settings).
+- Playlist and channel links open a list of their videos to pick from, with options to save
+  into a folder named after the playlist and to number the files in playlist order. Videos
+  already in the folder are left unticked, so re-running a playlist only fetches new ones.
+- A video link opened from a playlist (`&list=…`) downloads just that video and offers the
+  rest of the playlist.
+
 It can also save a **transcript** and a **summary** next to each download:
 
 - Transcripts come from the video's YouTube captions (uploaded or automatic, in the spoken

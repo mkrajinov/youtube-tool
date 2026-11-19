@@ -33,19 +33,28 @@ public struct DownloadOptions: Sendable, Equatable {
     public var outputDirectory: URL
     public var embedMetadata: Bool
     public var ffmpegLocation: URL?
+    /// Put before the file name, e.g. "07 - " for numbered playlist downloads.
+    public var filePrefix: String
 
     public init(
         mode: DownloadMode,
         audioFormat: AudioFormat = .m4a,
         outputDirectory: URL,
         embedMetadata: Bool = true,
-        ffmpegLocation: URL? = nil
+        ffmpegLocation: URL? = nil,
+        filePrefix: String = ""
     ) {
         self.mode = mode
         self.audioFormat = audioFormat
         self.outputDirectory = outputDirectory
         self.embedMetadata = embedMetadata
         self.ffmpegLocation = ffmpegLocation
+        self.filePrefix = filePrefix
+    }
+
+    /// Extension of the finished file.
+    public var fileExtension: String {
+        mode == .video ? "mp4" : audioFormat.rawValue
     }
 
     /// Human readable short description, e.g. "Video · mp4" or "Audio · m4a".

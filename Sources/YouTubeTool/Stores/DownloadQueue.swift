@@ -138,27 +138,101 @@ final class DownloadQueue {
 
     // MARK: Queue operations
 
-    /// Accepts one or more URLs separated by whitespace. Returns how many were added.
+    /// A playlist or channel waiting for the user to pick videos, with the settings at the time.
+    struct PlaylistRequest: Identifiable, Equatable {
+        let id = UUID()
+        let url: String
+        let mode: DownloadMode
+        let audioFormat: AudioFormat
+        let text: DownloadJob.TextRequest
+    }
+
+    struct AddResult {
+        var videos = 0
+        var playlists = 0
+        /// The one link added was a video opened from a playlist: offer the whole playlist.
+        var playlistOffer: String?
+
+        var isEmpty: Bool { videos == 0 && playlists == 0 }
+    }
+
+    /// Playlists shown one after another in the picker sheet.
+    private(set) var playlistRequests: [PlaylistRequest] = []
+
+    func dismissPlaylist(_ request: PlaylistRequest) {
+        playlistRequests.removeAll { $0.id == request.id }
+    }
+
+    /// Adds every YouTube link found in `text`: videos go to the queue, playlists and channels
+    /// open the picker.
     @discardableResult
-    func enqueue(_ text: String, mode: DownloadMode, audioFormat: AudioFormat,
-                 textRequest: DownloadJob.TextRequest = DownloadJob.TextRequest()) -> Int {
-        let urls = text
-            .split(whereSeparator: { $0.isWhitespace })
-            .map(String.init)
-            .filter(YTDLPArguments.isLikelyYouTubeURL)
-        for url in urls {
-            let options = DownloadOptions(
-                mode: mode,
-                audioFormat: audioFormat,
-                outputDirectory: AppSettings.outputDirectory,
-                embedMetadata: AppSettings.embedMetadata,
-                ffmpegLocation: tools.ffmpeg?.url.deletingLastPathComponent()  // dir, so ffprobe resolves too
-            )
-            let job = DownloadJob(url: url, options: options, text: textRequest)
-            jobs.insert(job, at: 0)
-            fetchInfo(for: job)
+    func add(_ text: String, mode: DownloadMode, audioFormat: AudioFormat,
+             textRequest: DownloadJob.TextRequest = DownloadJob.TextRequest()) -> AddResult {
+        let links = LinkExtractor.links(in: text).compactMap(YouTubeLink.classify)
+        var result = AddResult()
+        var newJobs: [DownloadJob] = []
+        for link in links {
+            switch link {
+            case .video(let url, _):
+                let options = makeOptions(mode: mode, audioFormat: audioFormat, directory: AppSettings.outputDirectory)
+                newJobs.append(DownloadJob(url: url, options: options, text: textRequest))
+            case .playlist(let url):
+                openPlaylist(url, mode: mode, audioFormat: audioFormat, textRequest: textRequest)
+                result.playlists += 1
+            }
         }
-        return urls.count
+        if links.count == 1, case .video(_, let playlist?) = links[0] { result.playlistOffer = playlist }
+        result.videos = newJobs.count
+        jobs.insert(contentsOf: newJobs, at: 0)
+        newJobs.forEach(fetchInfo)
+        return result
+    }
+
+    func openPlaylist(_ url: String, mode: DownloadMode, audioFormat: AudioFormat,
+                      textRequest: DownloadJob.TextRequest) {
+        guard !playlistRequests.contains(where: { $0.url == url }) else { return }
+        playlistRequests.append(PlaylistRequest(url: url, mode: mode, audioFormat: audioFormat, text: textRequest))
+    }
+
+    func fetchPlaylist(_ url: String) async throws -> PlaylistInfo {
+        guard let ytdlp = tools.ytdlp else { throw YTDLPError.failed("yt-dlp not found") }
+        return try await client(ytdlp).fetchPlaylist(url: url)
+    }
+
+    /// Where a playlist's videos go: the download folder, or a subfolder named after the playlist.
+    static func playlistDirectory(for info: PlaylistInfo, ownFolder: Bool) -> URL {
+        ownFolder
+            ? AppSettings.outputDirectory.appendingPathComponent(PlaylistNaming.folderName(info.title), isDirectory: true)
+            : AppSettings.outputDirectory
+    }
+
+    /// Queues the chosen videos of a playlist. They keep the playlist order.
+    func enqueue(_ entries: [PlaylistEntry], from info: PlaylistInfo, request: PlaylistRequest,
+                 ownFolder: Bool, numbered: Bool) {
+        let directory = Self.playlistDirectory(for: info, ownFolder: ownFolder)
+        let total = info.entries.count
+        let newJobs = entries.map { entry in
+            var options = makeOptions(mode: request.mode, audioFormat: request.audioFormat, directory: directory)
+            if numbered { options.filePrefix = PlaylistNaming.numberPrefix(index: entry.index, count: total) }
+            let job = DownloadJob(url: entry.url, options: options, text: request.text)
+            job.metadata = entry.partialMetadata
+            job.metadataIsPartial = true
+            job.playlistLabel = "\(info.title) #\(entry.index)"
+            job.state = .queued
+            return job
+        }
+        jobs.insert(contentsOf: newJobs, at: 0)
+        pump()
+    }
+
+    private func makeOptions(mode: DownloadMode, audioFormat: AudioFormat, directory: URL) -> DownloadOptions {
+        DownloadOptions(
+            mode: mode,
+            audioFormat: audioFormat,
+            outputDirectory: directory,
+            embedMetadata: AppSettings.embedMetadata,
+            ffmpegLocation: tools.ffmpeg?.url.deletingLastPathComponent()  // dir, so ffprobe resolves too
+        )
     }
 
     func cancel(_ job: DownloadJob) {
@@ -175,7 +249,15 @@ final class DownloadQueue {
     }
 
     func cancelAll() {
+        // Waiting jobs first, so cancelling a running one doesn't start the next.
+        for job in jobs where job.state == .queued || job.state == .fetchingInfo {
+            job.task?.cancel()
+            job.state = .cancelled
+        }
+        infoWaiting.removeAll()
         jobs.filter(\.state.isActive).forEach(cancel)
+        textQueue.forEach { $0.textState = .none }
+        textQueue.removeAll()
         jobs.forEach { $0.textTask?.cancel() }
     }
 
@@ -183,6 +265,8 @@ final class DownloadQueue {
         guard !job.state.isActive else { return }
         let fresh = DownloadJob(url: job.url, options: job.options, text: job.text)
         fresh.metadata = job.metadata
+        fresh.metadataIsPartial = job.metadataIsPartial
+        fresh.playlistLabel = job.playlistLabel
         if let index = jobs.firstIndex(where: { $0.id == job.id }) {
             jobs[index] = fresh
         }
@@ -198,6 +282,7 @@ final class DownloadQueue {
         cancel(job)
         job.textTask?.cancel()
         textQueue.removeAll { $0.id == job.id }
+        infoWaiting.removeAll { $0.id == job.id }
         jobs.removeAll { $0.id == job.id }
     }
 
@@ -207,25 +292,41 @@ final class DownloadQueue {
 
     // MARK: Pipeline
 
+    /// Info fetches waiting for a slot: a pasted list of 100 links shouldn't start 100 yt-dlp processes.
+    private var infoWaiting: [DownloadJob] = []
+    private var infoRunning = 0
+    private static let maxInfoFetches = 3
+
     private func fetchInfo(for job: DownloadJob) {
-        guard let ytdlp = tools.ytdlp else {
+        guard tools.ytdlp != nil else {
             job.state = .failed("yt-dlp not found. Reinstall the app or set a path in Settings.")
             return
         }
         job.state = .fetchingInfo
-        job.task = Task {
-            do {
-                job.metadata = try await client(ytdlp).fetchMetadata(url: job.url)
-                guard job.state == .fetchingInfo else { return }
-                job.state = .queued
-            } catch is CancellationError {
-                job.state = .cancelled
-            } catch YTDLPError.cancelled {
-                job.state = .cancelled
-            } catch {
-                job.state = .failed(error.localizedDescription)
+        infoWaiting.append(job)
+        pumpInfo()
+    }
+
+    private func pumpInfo() {
+        while infoRunning < Self.maxInfoFetches, !infoWaiting.isEmpty {
+            let job = infoWaiting.removeFirst()
+            guard job.state == .fetchingInfo, let ytdlp = tools.ytdlp else { continue }  // cancelled while waiting
+            infoRunning += 1
+            job.task = Task {
+                do {
+                    job.metadata = try await client(ytdlp).fetchMetadata(url: job.url)
+                    if job.state == .fetchingInfo { job.state = .queued }
+                } catch is CancellationError {
+                    job.state = .cancelled
+                } catch YTDLPError.cancelled {
+                    job.state = .cancelled
+                } catch {
+                    if job.state == .fetchingInfo { job.state = .failed(error.localizedDescription) }
+                }
+                self.infoRunning -= 1
+                self.pumpInfo()
+                self.pump()
             }
-            self.pump()
         }
     }
 
@@ -327,6 +428,15 @@ final class DownloadQueue {
 
     private func makeText(for job: DownloadJob) async throws {
         guard let media = job.outputURL else { throw YTDLPError.failed("The downloaded file is missing") }
+        if job.metadataIsPartial, let ytdlp = tools.ytdlp {
+            // Playlist listings have no caption info; get the full details now.
+            job.textState = .fetchingCaptions
+            if let full = try? await client(ytdlp).fetchMetadata(url: job.url) {
+                job.metadata = full
+                job.metadataIsPartial = false
+            }
+            try Task.checkCancellation()
+        }
         let title = job.metadata?.title ?? media.deletingPathExtension().lastPathComponent
 
         if job.transcriptPlain == nil || job.transcriptURL == nil {

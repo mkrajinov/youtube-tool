@@ -26,10 +26,31 @@ enum Snapshot {
             .frame(width: 820)
             .background(Theme.windowBackground)
             render(cards.environment(queue), scheme: scheme, to: dir.appendingPathComponent("queue-\(suffix).png"))
+            render(playlistPreview.environment(queue), scheme: scheme,
+                   to: dir.appendingPathComponent("playlist-\(suffix).png"))
             render(SettingsView(scrollable: false).environment(queue),
                    scheme: scheme, to: dir.appendingPathComponent("settings-\(suffix).png"))
         }
         exit(0)
+    }
+
+    private static var playlistPreview: some View {
+        let titles: [(String, Double?)] = [
+            ("Intro to linear algebra", 642), ("Vectors, what even are they?", 594),
+            ("Linear combinations, span, and basis vectors", 586), ("[Private video]", nil),
+            ("Linear transformations and matrices", 659), ("Matrix multiplication as composition", 603),
+            ("Three-dimensional linear transformations", 279), ("The determinant", 600),
+            ("Inverse matrices, column space and null space", 755), ("Nonsquare matrices", 264),
+        ]
+        let entries = titles.enumerated().map { i, t in
+            PlaylistEntry(id: String(format: "video%06d", i), title: t.0, url: "https://youtu.be/\(i)",
+                          duration: t.1, channel: t.1 == nil ? nil : "3Blue1Brown", index: i + 1,
+                          isUnavailable: t.1 == nil)
+        }
+        let info = PlaylistInfo(id: "PL1", title: "Essence of linear algebra", channel: "3Blue1Brown", entries: entries)
+        let request = DownloadQueue.PlaylistRequest(url: "https://www.youtube.com/playlist?list=PL1", mode: .audio,
+                                                    audioFormat: .m4a, text: .init(transcript: true))
+        return PlaylistSheet(request: request, preview: info, downloaded: [entries[1].id])
     }
 
     /// `YouTubeTool --snapshot-window <file.png>`: renders a real window, title bar and traffic lights
@@ -89,7 +110,10 @@ extension DownloadQueue {
         summarised.summaryURL = dir.appendingPathComponent("k.summary.md")
         let transcribing = job("Interview without captions", .audio, .finished)
         transcribing.textState = .transcribing(0.37)
+        let fromPlaylist = job("Vectors, what even are they?", .audio, .queued)
+        fromPlaylist.playlistLabel = "Essence of linear algebra #2"
         setSampleJobs([
+            fromPlaylist,
             job("Designing Data-Intensive Applications — talk", .audio, .downloading, fraction: 0.62),
             job("BGP explained in 20 minutes", .video, .processing("Merging video and audio")),
             transcribing,
