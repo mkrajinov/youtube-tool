@@ -14,9 +14,12 @@ enum Theme {
     static let failure = Color(red: 0.92, green: 0.26, blue: 0.24)
     static let neutral = Color.secondary
 
-    // System window / card colours (the original look).
-    static let windowBackground = Color(nsColor: .windowBackgroundColor)
-    static let cardBackground = Color(nsColor: .controlBackgroundColor)
+    // Fixed window / card colours. The system ones (windowBackgroundColor, controlBackgroundColor)
+    // differ between macOS versions: on older releases the window is a lighter grey than the
+    // cards, so the app looked different on every Mac. These are the macOS 27 values.
+    static let windowBackgroundNS = dynamicNS(light: (1, 1, 1), dark: (0.118, 0.118, 0.118))
+    static let windowBackground = Color(nsColor: windowBackgroundNS)
+    static let cardBackground = windowBackground
     static let cardStroke = Color.primary.opacity(0.07)
     static let chipBackground = Color.primary.opacity(0.07)
     static let radius: CGFloat = 20
@@ -24,11 +27,11 @@ enum Theme {
     static let windowGradient = LinearGradient(colors: [windowBackground, windowBackground],
                                                startPoint: .top, endPoint: .bottom)
 
-    private static func dynamic(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
+    private static func dynamicNS(light: (Double, Double, Double), dark: (Double, Double, Double)) -> NSColor {
+        NSColor(name: nil) { appearance in
             let c = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
             return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
-        })
+        }
     }
 }
 
@@ -293,7 +296,7 @@ enum WindowChrome {
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
-        window.backgroundColor = .windowBackgroundColor
+        window.backgroundColor = Theme.windowBackgroundNS
         if window.toolbar?.identifier != "chrome" {
             let toolbar = NSToolbar(identifier: "chrome")
             toolbar.displayMode = .iconOnly
