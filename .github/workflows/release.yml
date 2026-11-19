@@ -1,0 +1,78 @@
+name: Build and release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # manual test build: uploads the zip as a workflow artifact, no release
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # build-app.sh numbers builds by commit count
+
+      - name: Check tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want="v$(tr -d '[:space:]' < VERSION)"
+          if [[ "$GITHUB_REF_NAME" != "$want" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match VERSION ($want)"
+            exit 1
+          fi
+
+      - name: Toolchain
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          swift --version
+
+      - name: Cache bundled tools
+        uses: actions/cache@v4
+        with:
+          path: vendor/tools
+          key: tools-${{ hashFiles('scripts/fetch-tools.sh') }}
+
+      - name: Unit tests
+        run: swift test
+
+      - name: Build release zip and cask
+        run: ./scripts/release.sh
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTubeTool
+          path: dist/*
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/YouTubeTool-*.zip dist/youtube-tool.rb \
+            --title "YouTube Tool ${GITHUB_REF_NAME#v}" --generate-notes
+
+      # Needs a TAP_TOKEN secret: a fine-grained token with Contents read/write on
+      # mkrajinov/homebrew-tap. Skipped when the secret isn't set.
+      - name: Update Homebrew tap
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo "::notice::TAP_TOKEN not set; copy dist/youtube-tool.rb to the tap by hand"
+            exit 0
+          fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/mkrajinov/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cp dist/youtube-tool.rb tap/Casks/youtube-tool.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/youtube-tool.rb
+          git commit -m "chore: youtube-tool ${GITHUB_REF_NAME#v}"
+          git push

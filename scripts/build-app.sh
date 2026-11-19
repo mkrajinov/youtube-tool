@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # Builds YouTubeTool.app in the project root from the Swift package.
+#
+# Signing:
+#   default                 ad-hoc signature (runs locally; downloaded copies need the quarantine flag removed)
+#   SIGN_IDENTITY="Developer ID Application: Name (TEAMID)"
+#                           Developer ID + hardened runtime + timestamp, ready for notarization
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 APP="YouTubeTool.app"
+VERSION="$(tr -d '[:space:]' < VERSION)"
+BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+BUNDLE_ID="io.github.mkrajinov.youtubetool"
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 
 ./scripts/fetch-tools.sh
 swift build -c "$CONFIG" --product YouTubeTool
@@ -19,6 +28,7 @@ done
 [[ -f Assets/AppIcon.icns ]] || ./scripts/make-icon.sh
 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp vendor/tools/versions.json "$APP/Contents/Resources/tool-versions.json"  # Helpers may only hold code
+cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,26 +37,37 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>YouTube Tool</string>
   <key>CFBundleDisplayName</key><string>YouTube Tool</string>
-  <key>CFBundleIdentifier</key><string>local.youtubetool</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>YouTubeTool</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSHumanReadableCopyright</key><string>Bundles yt-dlp, FFmpeg and Deno; see THIRD_PARTY_NOTICES.md</string>
 </dict>
 </plist>
 PLIST
 
-# Ad-hoc signatures, inside-out: helpers first, then the app. No --deep, and no hardened
-# runtime (deno's JIT would need extra entitlements under it).
-for tool in yt-dlp ffmpeg ffprobe deno; do
-  codesign --force --sign - "$APP/Contents/Helpers/$tool"
-done
-codesign --force --sign - "$APP"
+# Sign inside-out: helpers first, then the app. No --deep.
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  # Ad-hoc, no hardened runtime (deno's JIT would need entitlements under it).
+  for tool in yt-dlp ffmpeg ffprobe deno; do
+    codesign --force --sign - "$APP/Contents/Helpers/$tool"
+  done
+  codesign --force --sign - "$APP"
+else
+  for tool in yt-dlp ffmpeg ffprobe deno; do
+    ent=()
+    [[ -f "packaging/entitlements/$tool.plist" ]] && ent=(--entitlements "packaging/entitlements/$tool.plist")
+    codesign --force --timestamp --options runtime ${ent[@]+"${ent[@]}"} \
+      --sign "$SIGN_IDENTITY" "$APP/Contents/Helpers/$tool"
+  done
+  codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$APP"
+fi
 codesign --verify --strict "$APP"
 
 # Smoke test: every helper must still run after re-signing.
@@ -56,4 +77,4 @@ echo "ffmpeg  $("$H/ffmpeg" -hide_banner -version | head -1)"
 echo "ffprobe $("$H/ffprobe" -hide_banner -version | head -1)"
 echo "deno    $("$H/deno" --version | head -1)"
 touch "$APP"  # nudge Finder/Dock to pick up a changed icon
-echo "Built $(pwd)/$APP ($(du -sh "$APP" | cut -f1))"
+echo "Built $(pwd)/$APP $VERSION ($BUILD_NUMBER), $(du -sh "$APP" | cut -f1), signed ${SIGN_IDENTITY:-ad-hoc}"
