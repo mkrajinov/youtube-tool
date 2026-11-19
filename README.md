@@ -34,9 +34,10 @@ swift test                  # unit tests; YTT_LIVE=1 adds real download tests
 1. Bump `VERSION`, commit, then tag and push: `git tag v<version> && git push origin main v<version>`.
 2. The **Build and release** GitHub Action runs the tests, builds
    `YouTubeTool-<version>.zip` and the cask `youtube-tool.rb`, and attaches both to a
-   GitHub release. With a `TAP_TOKEN` secret (fine-grained token, Contents read/write on
-   [mkrajinov/homebrew-tap](https://github.com/mkrajinov/homebrew-tap)) it also updates
-   `Casks/youtube-tool.rb` there; otherwise copy the cask by hand.
+   GitHub release. With the `HOMEBREW_TAP_SSH_KEY` secret (private half of a write deploy
+   key on [mkrajinov/homebrew-tap](https://github.com/mkrajinov/homebrew-tap), same as the
+   fritzbox release) it also updates `Casks/youtube-tool.rb` there; otherwise copy the
+   cask by hand.
 
 Run it from the Actions tab for a test build without a release. Locally,
 `./scripts/release.sh` produces the same files in `dist/`; with `SIGN_IDENTITY` and
