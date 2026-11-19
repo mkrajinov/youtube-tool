@@ -50,14 +50,17 @@ swift test                  # unit tests; YTT_LIVE=1 adds real download tests
 
 ## Release
 
-1. Bump `VERSION`, commit, then tag and push: `git tag v<version> && git push origin main v<version>`.
-2. The **Build and release** GitHub Action runs the tests, builds
-   `YouTubeTool-<version>.zip` and the cask `youtube-tool.rb`, and attaches both to a
-   GitHub release. With the `HOMEBREW_TAP_TOKEN` secret (fine-grained token limited to
-   [mkrajinov/homebrew-tap](https://github.com/mkrajinov/homebrew-tap), Contents
-   read/write) it also updates `Casks/youtube-tool.rb` there; otherwise copy the cask by hand.
+Every push to `main` is released automatically by the **Build and release** GitHub Action:
 
-Run it from the Actions tab for a test build without a release. Locally,
+1. It picks the version: `VERSION` if that hasn't been released yet, otherwise the next patch
+   (0.3.0 → 0.3.1 → 0.3.2 …). Bump `VERSION` by hand to start a new minor or major version.
+2. It runs the tests, builds `YouTubeTool-<version>.zip` and the cask `youtube-tool.rb`, and
+   publishes both as GitHub release `v<version>` (the tag is created on the pushed commit).
+3. With the `HOMEBREW_TAP_TOKEN` secret (fine-grained token limited to
+   [mkrajinov/homebrew-tap](https://github.com/mkrajinov/homebrew-tap), Contents
+   read/write) it updates `Casks/youtube-tool.rb` there, so `brew upgrade` picks it up.
+
+Running the action by hand from the Actions tab re-releases the current `main`. Locally,
 `./scripts/release.sh` produces the same files in `dist/`; with `SIGN_IDENTITY` and
 `NOTARY_PROFILE` set it signs with a Developer ID and notarizes (see the script header).
 

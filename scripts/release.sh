@@ -12,7 +12,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-VERSION="$(tr -d '[:space:]' < VERSION)"
+VERSION="${APP_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUNDLE_ID="io.github.mkrajinov.youtubetool"
 APP="YouTubeTool.app"
 DIST="dist"

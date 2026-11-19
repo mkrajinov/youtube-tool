@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 APP="YouTubeTool.app"
-VERSION="$(tr -d '[:space:]' < VERSION)"
+VERSION="${APP_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 BUNDLE_ID="io.github.mkrajinov.youtubetool"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"

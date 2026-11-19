@@ -1,12 +1,19 @@
 name: Build and release
 
+# Every push to main is released: the next patch version is tagged, built, published and put
+# in the Homebrew tap. Bump VERSION by hand to start a new minor or major version.
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch: # manual test build: uploads the zip as a workflow artifact, no release
+    branches: [main]
+  workflow_dispatch: # re-release the current main (same version if it's already tagged)
 
 permissions:
   contents: write
+
+# One release at a time, in push order, so two quick pushes don't pick the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -16,14 +23,12 @@ jobs:
         with:
           fetch-depth: 0 # build-app.sh numbers builds by commit count
 
-      - name: Check tag matches VERSION
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Pick version
         run: |
-          want="v$(tr -d '[:space:]' < VERSION)"
-          if [[ "$GITHUB_REF_NAME" != "$want" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match VERSION ($want)"
-            exit 1
-          fi
+          version="$(./scripts/next-version.sh)"
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
+          echo "Releasing $version"
 
       - name: Toolchain
         run: |
@@ -49,23 +54,21 @@ jobs:
           path: dist/*
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           files=(dist/YouTubeTool-*.zip dist/youtube-tool.rb)
           # Re-runs replace the assets so the zip and the cask checksum always match.
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
-              --title "YouTube Tool ${GITHUB_REF_NAME#v}" --generate-notes
+            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" \
+              --title "YouTube Tool $APP_VERSION" --generate-notes
           fi
 
       # HOMEBREW_TAP_TOKEN: fine-grained personal access token limited to
       # mkrajinov/homebrew-tap with Contents read/write. Skipped when the secret isn't set.
       - name: Update Homebrew tap
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -84,5 +87,5 @@ jobs:
             echo "Tap already up to date"
             exit 0
           fi
-          git commit -m "youtube-tool ${GITHUB_REF_NAME}"
+          git commit -m "youtube-tool ${TAG}"
           git push
