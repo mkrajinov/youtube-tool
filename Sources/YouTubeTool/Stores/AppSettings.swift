@@ -59,9 +59,10 @@ enum AppSettings {
 
 /// The app's own version, from Info.plist (written by scripts/build-app.sh from VERSION).
 enum AppInfo {
-    /// "0.3.0", or "dev" when run with `swift run` (no bundle Info.plist).
+    /// "0.3.0"; without a bundle Info.plist (`swift run`) the `APP_VERSION` environment variable, else "dev".
     static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? ProcessInfo.processInfo.environment["APP_VERSION"] ?? "dev"
     }
 
     static var build: String? {

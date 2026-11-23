@@ -1,7 +1,29 @@
 # YouTube Tool
 
+[![Latest release](https://img.shields.io/github/v/release/mkrajinov/youtube-tool)](https://github.com/mkrajinov/youtube-tool/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![macOS 15+, Apple Silicon](https://img.shields.io/badge/macOS-15%2B%20%C2%B7%20Apple%20Silicon-lightgrey)
+
 A native macOS app that downloads YouTube videos as mp4, or audio only as m4a, mp3, opus
-or wav. yt-dlp, FFmpeg and Deno are built in, so nothing else needs installing.
+or wav, and can save a transcript and an on-device summary next to each one. yt-dlp,
+FFmpeg and Deno are built in, so nothing else needs installing.
+
+```sh
+brew install --cask mkrajinov/tap/youtube-tool
+```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/main-dark.png">
+  <img alt="Main window: three links pasted, audio only (m4a) with transcript, and the download queue" src="docs/screenshots/main-light.png" width="720">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/playlist-dark.png">
+  <img alt="Playlist picker: tick the videos to download, already downloaded ones are marked" src="docs/screenshots/playlist-light.png" width="600">
+</picture>
+
+Meant for videos you're allowed to save: your own uploads, Creative Commons and
+public-domain material, or offline viewing where YouTube's terms permit it.
 
 Several at once:
 
@@ -60,9 +82,19 @@ Every push to `main` is released automatically by the **Build and release** GitH
    [mkrajinov/homebrew-tap](https://github.com/mkrajinov/homebrew-tap), Contents
    read/write) it updates `Casks/youtube-tool.rb` there, so `brew upgrade` picks it up.
 
+With the signing secrets set (`DEVELOPER_ID_P12`, `DEVELOPER_ID_P12_PASSWORD`, `NOTARY_KEY_P8`,
+`NOTARY_KEY_ID`, `NOTARY_ISSUER`; see the workflow file) the app is signed with a Developer ID
+and notarized, so it opens without a Gatekeeper warning. Without them it is ad-hoc signed and
+the cask removes the quarantine flag.
+
 Running the action by hand from the Actions tab re-releases the current `main`. Locally,
 `./scripts/release.sh` produces the same files in `dist/`; with `SIGN_IDENTITY` and
 `NOTARY_PROFILE` set it signs with a Developer ID and notarizes (see the script header).
+
+## License
+
+MIT, see [LICENSE](LICENSE). The bundled yt-dlp, FFmpeg (GPL-3.0) and Deno keep their own
+licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Third-party software
 

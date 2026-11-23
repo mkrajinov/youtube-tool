@@ -36,7 +36,7 @@ enum Snapshot {
 
     private static var playlistPreview: some View {
         let titles: [(String, Double?)] = [
-            ("Intro to linear algebra", 642), ("Vectors, what even are they?", 594),
+            ("Why linear algebra?", 642), ("Vectors, what even are they?", 594),
             ("Linear combinations, span, and basis vectors", 586), ("[Private video]", nil),
             ("Linear transformations and matrices", 659), ("Matrix multiplication as composition", 603),
             ("Three-dimensional linear transformations", 279), ("The determinant", 600),
@@ -44,10 +44,10 @@ enum Snapshot {
         ]
         let entries = titles.enumerated().map { i, t in
             PlaylistEntry(id: String(format: "video%06d", i), title: t.0, url: "https://youtu.be/\(i)",
-                          duration: t.1, channel: t.1 == nil ? nil : "3Blue1Brown", index: i + 1,
+                          duration: t.1, channel: t.1 == nil ? nil : "Math Notebook", index: i + 1,
                           isUnavailable: t.1 == nil)
         }
-        let info = PlaylistInfo(id: "PL1", title: "Essence of linear algebra", channel: "3Blue1Brown", entries: entries)
+        let info = PlaylistInfo(id: "PL1", title: "Linear algebra, visually", channel: "Math Notebook", entries: entries)
         let request = DownloadQueue.PlaylistRequest(url: "https://www.youtube.com/playlist?list=PL1", mode: .audio,
                                                     audioFormat: .m4a, text: .init(transcript: true))
         return PlaylistSheet(request: request, preview: info, downloaded: [entries[1].id])
@@ -161,10 +161,10 @@ extension DownloadQueue {
         let transcribing = job("Interview without captions", .audio, .finished)
         transcribing.textState = .transcribing(0.37)
         let fromPlaylist = job("Vectors, what even are they?", .audio, .queued)
-        fromPlaylist.playlistLabel = "Essence of linear algebra #2"
+        fromPlaylist.playlistLabel = "Linear algebra, visually #2"
         setSampleJobs([
             fromPlaylist,
-            job("Designing Data-Intensive Applications — talk", .audio, .downloading, fraction: 0.62),
+            job("Distributed systems in one hour", .audio, .downloading, fraction: 0.62),
             job("BGP explained in 20 minutes", .video, .processing("Merging video and audio")),
             transcribing,
             summarised,
